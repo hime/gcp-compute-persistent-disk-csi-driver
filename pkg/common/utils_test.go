@@ -26,6 +26,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/google/go-cmp/cmp"
+	"github.com/googleapis/gax-go/v2/apierror"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -1205,6 +1206,13 @@ func TestParseMachineType(t *testing.T) {
 }
 
 func TestCodeForError(t *testing.T) {
+	getAPIWrappedError := func(err *googleapi.Error) *googleapi.Error {
+		apierr, _ := apierror.ParseError(err, false)
+		wrappedError := &googleapi.Error{}
+		wrappedError.Wrap(apierr)
+
+		return wrappedError
+	}
 	testCases := []struct {
 		name     string
 		inputErr error
@@ -1219,6 +1227,14 @@ func TestCodeForError(t *testing.T) {
 			name:     "User error",
 			inputErr: &googleapi.Error{Code: http.StatusBadRequest, Message: "User error with bad request"},
 			expCode:  codes.InvalidArgument,
+		},
+		{
+			name: "googleapi.Error that wraps apierror.APIError, that wraps googleapi.Error",
+			inputErr: getAPIWrappedError(&googleapi.Error{
+				Code:    403,
+				Message: "Some permission error",
+			}),
+			expCode: codes.PermissionDenied,
 		},
 		{
 			name:     "googleapi.Error but not a user error",

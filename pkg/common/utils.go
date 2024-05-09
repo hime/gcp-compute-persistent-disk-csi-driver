@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"github.com/googleapis/gax-go/v2/apierror"
 	"golang.org/x/time/rate"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/grpc/codes"
@@ -423,7 +424,6 @@ func CodeForError(sourceError error) codes.Code {
 	if sourceError == nil {
 		return codes.Internal
 	}
-
 	if code, err := isUserMultiAttachError(sourceError); err == nil {
 		return code
 	}
@@ -433,15 +433,9 @@ func CodeForError(sourceError error) codes.Code {
 	if code, err := isContextError(sourceError); err == nil {
 		return code
 	}
-
-	var apiErr *googleapi.Error
-	if !errors.As(sourceError, &apiErr) {
-		return codes.Internal
-	}
-	if code, ok := userErrorCodeMap[apiErr.Code]; ok {
+	if code, err := isAPIError(sourceError); err == nil {
 		return code
 	}
-
 	return codes.Internal
 }
 
@@ -479,10 +473,41 @@ func existingErrorCode(err error) (codes.Code, error) {
 	if err == nil {
 		return codes.Unknown, fmt.Errorf("null error")
 	}
-	if status, ok := status.FromError(err); ok {
-		return status.Code(), nil
+	var tmpError *TemporaryError
+	if errors.As(err, &tmpError) {
+		if status, ok := status.FromError(err); ok {
+			return status.Code(), nil
+		}
 	}
+	var googleErr *googleapi.Error
+	if !errors.As(err, &googleErr) {
+		if status, ok := status.FromError(err); ok {
+			return status.Code(), nil
+		}
+	}
+
 	return codes.Unknown, fmt.Errorf("no existing error code for %w", err)
+}
+
+func isAPIError(err error) (codes.Code, error) {
+	var googleErr *googleapi.Error
+	if errors.As(err, &googleErr) {
+		var sourceCode int
+		var apiErr *apierror.APIError
+		if errors.As(googleErr.Unwrap(), &apiErr) {
+			sourceCode = apiErr.HTTPCode()
+		} else {
+			sourceCode = googleErr.Code
+		}
+		// Map API error code to user error code.
+		if code, ok := userErrorCodeMap[sourceCode]; ok {
+			return code, nil
+		}
+
+		return codes.Unknown, fmt.Errorf("googleapi.Error %w does not map to any known errors", err)
+	}
+
+	return codes.Unknown, fmt.Errorf("error %w is not a googleapi.Error", err)
 }
 
 func LoggedError(msg string, err error) error {
