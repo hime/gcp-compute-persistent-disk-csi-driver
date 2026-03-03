@@ -49,3 +49,6 @@ test/k8s-integration/config/test-config.yaml
 *.un~
 Session.vim
 .netrwhist
+
+# Living Documentation temporary files
+tmp_living_docs/

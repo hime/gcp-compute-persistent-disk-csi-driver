@@ -163,3 +163,64 @@ init-buildx:
 	# Register gcloud as a Docker credential helper.
 	# Required for "docker buildx build --push".
 	gcloud auth configure-docker --quiet
+
+.PHONY: update-living-docs
+update-living-docs:
+	@echo "Updating living documentation..."
+	@mkdir -p tmp_living_docs
+	@rm -f tmp_living_docs/*
+
+	@for doc_file in $(wildcard docs/living-documentation/*.md); do \
+		echo "Processing $$doc_file"; \
+		OLD_COMMIT=$$(grep 'reviewed_commit:' $$doc_file | sed 's/reviewed_commit: //'); \
+		SOURCE_FILE=$$(grep 'Sourced from:' $$doc_file | grep -o 'file://[^)]*' | sed 's#file://##'); \
+		NEW_COMMIT=$$(git rev-parse HEAD); \
+		if [ -z "$$OLD_COMMIT" ] || [ -z "$$SOURCE_FILE" ]; then \
+			echo "  Skipping $$doc_file: Missing reviewed_commit or source link."; \
+			continue; \
+		fi; \
+		if [ ! -f "$$SOURCE_FILE" ]; then \
+			echo "  Skipping $$doc_file: Source file $$SOURCE_FILE not found."; \
+			continue; \
+		fi; \
+		echo "  Diffing $$SOURCE_FILE from $$OLD_COMMIT to $$NEW_COMMIT"; \
+		DIFF_OUTPUT=$$(git diff $$OLD_COMMIT..$$NEW_COMMIT -- $$SOURCE_FILE); \
+		if [ -z "$$DIFF_OUTPUT" ]; then \
+			echo "  No changes in $$SOURCE_FILE since $$OLD_COMMIT. Skipping."; \
+			continue; \
+		fi; \
+		PROMPT_FILE="tmp_living_docs/$$(basename $$doc_file .md)_prompt.md"; \
+		LLM_INSTRUCTIONS="docs/llm-prompts/llm_instructions.md"; \
+		if [ ! -f "$$LLM_INSTRUCTIONS" ]; then \
+			echo "  Error: LLM instructions file not found at $$LLM_INSTRUCTIONS"; \
+			exit 1; \
+		fi; \
+		cat "$$LLM_INSTRUCTIONS" > $$PROMPT_FILE; \
+		echo "" >> $$PROMPT_FILE; \
+		echo "# Prompt Details" >> $$PROMPT_FILE; \
+		echo "" >> $$PROMPT_FILE; \
+		echo "--- " >> $$PROMPT_FILE; \
+		echo "NEW_COMMIT: $$NEW_COMMIT" >> $$PROMPT_FILE; \
+		date "+CURRENT_TIMESTAMP: %Y-%m-%dT%H:%M:%SZ" >> $$PROMPT_FILE; \
+		echo "SOURCE_FILE: $$SOURCE_FILE" >> $$PROMPT_FILE; \
+		echo "MARKDOWN_FILE: $$doc_file" >> $$PROMPT_FILE; \
+		echo "--- " >> $$PROMPT_FILE; \
+		echo "" >> $$PROMPT_FILE; \
+		echo "## Original Documentation ($$doc_file):" >> $$PROMPT_FILE; \
+		echo "" >> $$PROMPT_FILE; \
+		cat $$doc_file >> $$PROMPT_FILE; \
+		echo "" >> $$PROMPT_FILE; \
+		echo "## Code Diff ('$$SOURCE_FILE'):" >> $$PROMPT_FILE; \
+		echo "" >> $$PROMPT_FILE; \
+		echo '```diff' >> $$PROMPT_FILE; \
+		printf '%s\n' "$$DIFF_OUTPUT" >> $$PROMPT_FILE; \
+		echo '```' >> $$PROMPT_FILE; \
+		echo "" >> $$PROMPT_FILE; \
+		echo "## Updated Documentation Output:" >> $$PROMPT_FILE; \
+		echo "" >> $$PROMPT_FILE; \
+		echo "Now, assuming a 'gemini' CLI tool exists that takes a Markdown file as input:"; \
+		echo "  Running: cat $$PROMPT_FILE | gemini --prompt \"Update the living documentation based on the input\" > $$doc_file"; \
+		echo "  Warning: 'gemini' CLI invocation is a placeholder."; \
+	done
+	@echo "Living documentation update process finished."
+	@rm -rf tmp_living_docs
