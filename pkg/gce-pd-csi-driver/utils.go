@@ -23,7 +23,6 @@ import (
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
 
 	"sigs.k8s.io/gcp-compute-persistent-disk-csi-driver/pkg/common"
@@ -185,10 +184,11 @@ func validateStoragePools(req *csi.CreateVolumeRequest, params parameters.DiskPa
 		return fmt.Errorf("failed to validate storage pools zones: %v", err)
 	}
 
+	// [Draft] Remove this when cross-project storage pool usage is supported.
 	// Check that Storage Pools are in same project as the GCEClient that creates the volume.
-	if err := validateStoragePoolProjects(project, params.StoragePools); err != nil {
-		return fmt.Errorf("failed to validate storage pools projects: %v", err)
-	}
+	// if err := validateStoragePoolProjects(project, params.StoragePools); err != nil {
+	// 	return fmt.Errorf("failed to validate storage pools projects: %v", err)
+	// }
 
 	return nil
 }
@@ -208,16 +208,16 @@ func validateStoragePoolZones(req *csi.CreateVolumeRequest, storagePools []param
 	return nil
 }
 
-func validateStoragePoolProjects(project string, storagePools []parameters.StoragePool) error {
-	spProjects := sets.String{}
-	for _, sp := range storagePools {
-		if sp.Project != project {
-			spProjects.Insert(sp.Project)
-			return fmt.Errorf("cross-project storage pools usage is not supported. Trying to CreateVolume in project %q with storage pools in projects %v", project, spProjects.UnsortedList())
-		}
-	}
-	return nil
-}
+// func validateStoragePoolProjects(project string, storagePools []parameters.StoragePool) error {
+// 	spProjects := sets.String{}
+// 	for _, sp := range storagePools {
+// 		if sp.Project != project {
+// 			spProjects.Insert(sp.Project)
+// 			return fmt.Errorf("cross-project storage pools usage is not supported. Trying to CreateVolume in project %q with storage pools in projects %v", project, spProjects.UnsortedList())
+// 		}
+// 	}
+// 	return nil
+// }
 
 func getMultiWriterFromCapability(vc *csi.VolumeCapability) (bool, error) {
 	if vc.GetAccessMode() == nil {
