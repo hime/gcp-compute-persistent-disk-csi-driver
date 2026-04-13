@@ -52,6 +52,7 @@ import (
 
 var (
 	cloudConfigFilePath  = flag.String("cloud-config", "", "Path to GCE cloud provider config")
+	failCloseOnAuthError = flag.Bool("fail-close-on-auth-error", false, "If set to true, the CSI driver will fail its controller service to start if it cannot fetch the initial authentication token during startup. Default is false (legacy behavior).")
 	endpoint             = flag.String("endpoint", "unix:/tmp/csi.sock", "CSI endpoint")
 	runControllerService = flag.Bool("run-controller-service", true, "If set to false then the CSI driver does not activate its controller service (default: true)")
 	runNodeService       = flag.Bool("run-node-service", true, "If set to false then the CSI driver does not activate its node service (default: true)")
@@ -110,6 +111,8 @@ var (
 	diskTopology = flag.Bool("disk-topology", false, "If set to true, the driver will add a disk-type.gke.io/[disk-type] topology label when the StorageClass has the use-allowed-disk-topology parameter set to true. That topology label is included in the Topologies returned in CreateVolumeResponse. This flag is disabled by default.")
 
 	dynamicVolumes = flag.Bool("dynamic-volumes", false, "If set to true, the CSI driver will automatically select a compatible disk type based on the presence of the dynamic-volume parameter and disk types defined in the StorageClass. Disabled by default.")
+
+	gceDiskStatus = flag.Bool("gce-disk-status", false, "If set to true, the CSI driver will update the volume-publish-status-gke-io label on GCE disks after successful attachment to indicate the attachment status. Disabled by default.")
 
 	diskCacheSyncPeriod = flag.Duration("disk-cache-sync-period", 10*time.Minute, "Period for the disk cache to check the /dev/disk/by-id/ directory and evaluate the symlinks")
 
@@ -267,7 +270,7 @@ func handle() {
 	// Initialize requirements for the controller service
 	var controllerServer *driver.GCEControllerServer
 	if *runControllerService {
-		cloudProvider, err := gce.CreateCloudProvider(ctx, version, *cloudConfigFilePath, computeEndpoint, computeEnvironment, waitForAttachConfig, listInstancesConfig, *enableMultitenancyFlag)
+		cloudProvider, err := gce.CreateCloudProvider(ctx, version, *cloudConfigFilePath, computeEndpoint, computeEnvironment, waitForAttachConfig, listInstancesConfig, *enableMultitenancyFlag, *failCloseOnAuthError)
 		if err != nil {
 			klog.Fatalf("Failed to get cloud provider: %v", err.Error())
 		}
@@ -285,6 +288,7 @@ func handle() {
 			EnableDiskTopology:       *diskTopology,
 			EnableDiskSizeValidation: *enableDiskSizeValidation,
 			EnableDynamicVolumes:     *dynamicVolumes,
+			EnableGCEDiskStatus:      *gceDiskStatus,
 		}
 
 		controllerServer = driver.NewControllerServer(gceDriver, cloudProvider, initialBackoffDuration, maxBackoffDuration, fallbackRequisiteZones, *enableStoragePoolsFlag, *enableDataCacheFlag, multiZoneVolumeHandleConfig, listVolumesConfig, provisionableDisksConfig, *enableHdHAFlag, args)
