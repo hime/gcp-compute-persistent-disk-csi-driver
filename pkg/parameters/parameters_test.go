@@ -30,6 +30,7 @@ func TestExtractAndDefaultParameters(t *testing.T) {
 		name                  string
 		parameters            map[string]string
 		labels                map[string]string
+		clusterID             string
 		enableStoragePools    bool
 		enableDataCache       bool
 		enableMultiZone       bool
@@ -550,12 +551,29 @@ func TestExtractAndDefaultParameters(t *testing.T) {
 				ResourceTags: map[string]string{},
 			},
 		},
+		{
+			name:       "Cluster ownership ID specified",
+			clusterID:  "test-cluster",
+			parameters: map[string]string{},
+			labels:     map[string]string{},
+			expectParams: DiskParameters{
+				DiskType:             "pd-standard",
+				ReplicationType:      "none",
+				DiskEncryptionKMSKey: "",
+				Tags:                 map[string]string{},
+				Labels: map[string]string{
+					constants.ClusterIDLabel: "test-cluster",
+				},
+				ResourceTags: map[string]string{},
+			},
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			pp := ParameterProcessor{
 				DriverName:          "testDriver",
+				ClusterOwnershipID:  tc.clusterID,
 				EnableStoragePools:  tc.enableStoragePools,
 				EnableMultiZone:     tc.enableMultiZone,
 				EnableHdHA:          tc.enableHdHA,
