@@ -47,6 +47,7 @@ func controllerServerForTest(cloudProvider gce.GCECompute, args *GCEControllerSe
 	errorBackoffMaxDuration := 5 * time.Minute
 	fallbackRequisiteZones := []string{}
 	enableStoragePools := false
+	enableSharedStoragePools := false
 	enableDataCache := false
 	multiZoneVolumeHandleConfig := MultiZoneVolumeHandleConfig{}
 	listVolumesConfig := ListVolumesConfig{}
@@ -54,7 +55,7 @@ func controllerServerForTest(cloudProvider gce.GCECompute, args *GCEControllerSe
 		SupportsIopsChange:       []string{"hyperdisk-balanced", "hyperdisk-extreme"},
 		SupportsThroughputChange: []string{"hyperdisk-balanced", "hyperdisk-throughput", "hyperdisk-ml"},
 	}
-	return NewControllerServer(gceDriver, cloudProvider, errorBackoffInitialDuration, errorBackoffMaxDuration, fallbackRequisiteZones, enableStoragePools, enableDataCache, multiZoneVolumeHandleConfig, listVolumesConfig, provisionableDisksConfig, true /* enableHdHA */, args)
+	return NewControllerServer(gceDriver, cloudProvider, errorBackoffInitialDuration, errorBackoffMaxDuration, fallbackRequisiteZones, enableStoragePools, enableSharedStoragePools, enableDataCache, multiZoneVolumeHandleConfig, listVolumesConfig, provisionableDisksConfig, true /* enableHdHA */, args)
 }
 
 func initGCEDriverWithCloudProvider(t *testing.T, cloudProvider gce.GCECompute, args *GCEControllerServerArgs) *GCEDriver {

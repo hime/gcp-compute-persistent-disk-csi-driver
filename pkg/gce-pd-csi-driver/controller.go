@@ -109,6 +109,9 @@ type GCEControllerServer struct {
 	// If set to true, the CSI Driver will allow volumes to be provisioned in Storage Pools.
 	enableStoragePools bool
 
+	// If set to true, the CSI Driver will allow volumes to be provisioned in Storage Pools across projects.
+	enableSharedStoragePools bool
+
 	// If set to true, the CSI Driver will allow Hyperdisk-balanced High Availability disks
 	// to be provisioned.
 	enableHdHA bool
@@ -400,7 +403,7 @@ func (gceCS *GCEControllerServer) createVolumeInternal(ctx context.Context, req 
 	if _, err := getMultiWriterFromCapabilities(volumeCapabilities); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "VolumeCapabilities is invalid: %v", err.Error())
 	}
-	err = validateStoragePools(req, params, gceCS.CloudProvider.GetDefaultProject())
+	err = validateStoragePools(req, params, gceCS.CloudProvider.GetDefaultProject(), gceCS.enableSharedStoragePools)
 	if err != nil {
 		// Reassign error so that all errors are reported as InvalidArgument to RecordOperationErrorMetrics.
 		err = status.Errorf(codes.InvalidArgument, "CreateVolume failed to validate storage pools: %v", err)

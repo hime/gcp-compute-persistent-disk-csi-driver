@@ -300,12 +300,13 @@ func TestGetReadOnlyFromCapabilities(t *testing.T) {
 
 func TestValidateStoragePools(t *testing.T) {
 	testCases := []struct {
-		name       string
-		req        *csi.CreateVolumeRequest
-		params     parameters.DiskParameters
-		project    string
-		expErr     error
-		enableHdHA bool
+		name                           string
+		req                            *csi.CreateVolumeRequest
+		params                         parameters.DiskParameters
+		project                        string
+		expErr                         error
+		enableHdHA                     bool
+		enableSharedStoragePools       bool
 	}{
 		{
 			name: "success with storage pools not enabled",
@@ -568,6 +569,50 @@ func TestValidateStoragePools(t *testing.T) {
 			expErr:  fmt.Errorf("failed to validate storage pools projects: cross-project storage pools usage is not supported. Trying to CreateVolume in project \"other-project\" with storage pools in projects [test-project]"),
 		},
 		{
+			name: "success storage pools cross-project usage when allowed",
+			req: &csi.CreateVolumeRequest{
+				Name: "test-name",
+				AccessibilityRequirements: &csi.TopologyRequirement{
+					Requisite: []*csi.Topology{
+						{
+							Segments: map[string]string{constants.TopologyKeyZone: "us-central1-a"},
+						},
+						{
+							Segments: map[string]string{constants.TopologyKeyZone: "us-central1-b"},
+						},
+					},
+					Preferred: []*csi.Topology{
+						{
+							Segments: map[string]string{constants.TopologyKeyZone: "us-central1-a"},
+						},
+						{
+							Segments: map[string]string{constants.TopologyKeyZone: "us-central1-b"},
+						},
+					},
+				},
+			},
+			params: parameters.DiskParameters{
+				DiskType: "hyperdisk-balanced",
+				StoragePools: []parameters.StoragePool{
+					{
+						Project:      "test-project",
+						Zone:         "us-central1-a",
+						Name:         "storagePool-1",
+						ResourceName: "projects/test-project/zones/us-central1-a/storagePools/storagePool-1",
+					},
+					{
+						Project:      "test-project",
+						Zone:         "us-central1-b",
+						Name:         "storagePool-2",
+						ResourceName: "projects/test-project/zones/us-central1-a/storagePools/storagePool-1",
+					},
+				},
+			},
+			project: "other-project",
+			enableSharedStoragePools: true,
+			expErr: nil,
+		},
+		{
 			name: "success validateStoragePools",
 			req: &csi.CreateVolumeRequest{
 				Name: "test-name",
@@ -614,7 +659,7 @@ func TestValidateStoragePools(t *testing.T) {
 	for _, tc := range testCases {
 		t.Logf("Running test: %v", tc.name)
 		input := "validateStoragePools()"
-		err := validateStoragePools(tc.req, tc.params, tc.project)
+		err := validateStoragePools(tc.req, tc.params, tc.project, tc.enableSharedStoragePools)
 		if tc.expErr != nil && err == nil {
 			t.Fatalf("%s didn't get any error, but expected error %v", input, tc.expErr)
 		}

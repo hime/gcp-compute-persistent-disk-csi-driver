@@ -157,7 +157,7 @@ func validateAccessMode(am *csi.VolumeCapability_AccessMode) error {
 	return nil
 }
 
-func validateStoragePools(req *csi.CreateVolumeRequest, params parameters.DiskParameters, project string) error {
+func validateStoragePools(req *csi.CreateVolumeRequest, params parameters.DiskParameters, project string, enableSharedStoragePools bool) error {
 	storagePoolsEnabled := params.StoragePools != nil
 	if !storagePoolsEnabled || req == nil {
 		return nil
@@ -186,8 +186,10 @@ func validateStoragePools(req *csi.CreateVolumeRequest, params parameters.DiskPa
 	}
 
 	// Check that Storage Pools are in same project as the GCEClient that creates the volume.
-	if err := validateStoragePoolProjects(project, params.StoragePools); err != nil {
-		return fmt.Errorf("failed to validate storage pools projects: %v", err)
+	if !enableSharedStoragePools {
+		if err := validateStoragePoolProjects(project, params.StoragePools); err != nil {
+			return fmt.Errorf("failed to validate storage pools projects: %v", err)
+		}
 	}
 
 	return nil
