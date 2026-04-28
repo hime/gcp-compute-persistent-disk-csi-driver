@@ -113,7 +113,8 @@ var (
 
 	dynamicVolumes = flag.Bool("dynamic-volumes", false, "If set to true, the CSI driver will automatically select a compatible disk type based on the presence of the dynamic-volume parameter and disk types defined in the StorageClass. Disabled by default.")
 
-	gceDiskStatus = flag.Bool("gce-disk-status", false, "If set to true, the CSI driver will update the volume-publish-status-gke-io label on GCE disks after successful attachment to indicate the attachment status. Disabled by default.")
+	gceDiskStatus      = flag.Bool("gce-disk-status", false, "If set to true, the CSI driver will update the volume-publish-status-gke-io label on the GCE disk resource after successful attachment to indicate the attachment status. Disabled by default.")
+	clusterOwnershipID = flag.String("cluster-ownership-id", "", "The identifier for the cluster to which the CSI driver belongs. When specified, the id is applied to the GCE disk resource as a label")
 
 	diskCacheSyncPeriod = flag.Duration("disk-cache-sync-period", 10*time.Minute, "Period for the disk cache to check the /dev/disk/by-id/ directory and evaluate the symlinks")
 
@@ -231,6 +232,10 @@ func handle() {
 		klog.Fatalf("Bad extra tags: %v", err.Error())
 	}
 
+	if convert.CheckLabelValue(*clusterOwnershipID) != nil {
+		klog.Fatalf("Bad cluster ownership ID: %v", *clusterOwnershipID)
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -296,6 +301,7 @@ func handle() {
 			EnableDynamicVolumes:     *dynamicVolumes,
 			EnableGCEDiskStatus:      *gceDiskStatus,
 			EnablePdConversion:       *enablePdConversion,
+			ClusterOwnershipID:       *clusterOwnershipID,
 		}
 
 		controllerServer = driver.NewControllerServer(gceDriver, cloudProvider, initialBackoffDuration, maxBackoffDuration, fallbackRequisiteZones, *enableStoragePoolsFlag, *enableDataCacheFlag, multiZoneVolumeHandleConfig, listVolumesConfig, provisionableDisksConfig, *enableHdHAFlag, args)

@@ -56,6 +56,14 @@ func ConvertStringToBool(str string) (bool, error) {
 	return false, fmt.Errorf("Unexpected boolean string %s", str)
 }
 
+func CheckLabelValue(value string) error {
+	regexValue, _ := regexp.Compile(`^[\p{Ll}0-9_-]{0,63}$`)
+	if !regexValue.MatchString(value) {
+		return fmt.Errorf("label value %q is invalid (lowercase letter, digit, _ and - chars are allowed / 0-63 characters", value)
+	}
+	return nil
+}
+
 // ConvertLabelsStringToMap converts the labels from string to map
 // example: "key1=value1,key2=value2" gets converted into {"key1": "value1", "key2": "value2"}
 // See https://cloud.google.com/compute/docs/labeling-resources#label_format for details.
@@ -76,15 +84,6 @@ func ConvertLabelsStringToMap(labels string) (map[string]string, error) {
 		return nil
 	}
 
-	regexValue, _ := regexp.Compile(`^[\p{Ll}0-9_-]{0,63}$`)
-	checkLabelValueFn := func(value string) error {
-		if !regexValue.MatchString(value) {
-			return fmt.Errorf("label value %q is invalid (lowercase letter, digit, _ and - chars are allowed / 0-63 characters", value)
-		}
-
-		return nil
-	}
-
 	keyValueStrings := strings.Split(labels, labelsDelimiter)
 	for _, keyValue := range keyValueStrings {
 		keyValue := strings.Split(keyValue, labelsKeyValueDelimiter)
@@ -99,7 +98,7 @@ func ConvertLabelsStringToMap(labels string) (map[string]string, error) {
 		}
 
 		value := strings.TrimSpace(keyValue[1])
-		if err := checkLabelValueFn(value); err != nil {
+		if err := CheckLabelValue(value); err != nil {
 			return nil, err
 		}
 
