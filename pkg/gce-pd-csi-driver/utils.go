@@ -167,8 +167,8 @@ func validateStoragePools(req *csi.CreateVolumeRequest, params parameters.DiskPa
 		return fmt.Errorf("storage pools do not support confidential storage")
 	}
 
-	if !(params.DiskType == "hyperdisk-balanced" || params.DiskType == "hyperdisk-throughput") {
-		return fmt.Errorf("invalid disk-type: %q. storage pools only support hyperdisk-balanced or hyperdisk-throughput", params.DiskType)
+	if !(params.DiskType == "hyperdisk-balanced" || params.DiskType == "hyperdisk-throughput" || params.DiskType == parameters.ExapoolHyperdiskBalanced) {
+		return fmt.Errorf("invalid disk-type: %q. storage pools only support hyperdisk-balanced, hyperdisk-throughput, or exapool-hyperdisk-balanced", params.DiskType)
 	}
 
 	if params.IsRegional() {

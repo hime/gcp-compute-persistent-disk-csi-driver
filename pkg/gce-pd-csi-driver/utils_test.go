@@ -376,7 +376,7 @@ func TestValidateStoragePools(t *testing.T) {
 				},
 			},
 			project: "test-project",
-			expErr:  fmt.Errorf("invalid disk-type: \"pd-balanced\". storage pools only support hyperdisk-balanced or hyperdisk-throughput"),
+			expErr:  fmt.Errorf("invalid disk-type: \"pd-balanced\". storage pools only support hyperdisk-balanced, hyperdisk-throughput, or exapool-hyperdisk-balanced"),
 		},
 		{
 			name: "fail storage pools with regional PD",
@@ -427,7 +427,7 @@ func TestValidateStoragePools(t *testing.T) {
 				},
 			},
 			project:    "test-project",
-			expErr:     fmt.Errorf("invalid disk-type: \"hyperdisk-balanced-high-availability\". storage pools only support hyperdisk-balanced or hyperdisk-throughput"),
+			expErr:     fmt.Errorf("invalid disk-type: \"hyperdisk-balanced-high-availability\". storage pools only support hyperdisk-balanced, hyperdisk-throughput, or exapool-hyperdisk-balanced"),
 			enableHdHA: true,
 		},
 		{
@@ -453,7 +453,7 @@ func TestValidateStoragePools(t *testing.T) {
 				},
 			},
 			project: "test-project",
-			expErr:  fmt.Errorf("invalid disk-type: \"hyperdisk-balanced-high-availability\". storage pools only support hyperdisk-balanced or hyperdisk-throughput"),
+			expErr:  fmt.Errorf("invalid disk-type: \"hyperdisk-balanced-high-availability\". storage pools only support hyperdisk-balanced, hyperdisk-throughput, or exapool-hyperdisk-balanced"),
 		},
 		{
 			name: "fail storage pools with disk clones",
