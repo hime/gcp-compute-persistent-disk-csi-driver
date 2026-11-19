@@ -770,3 +770,57 @@ func TestGCEErrorReasonPrefersErrorInfo(t *testing.T) {
 		t.Errorf("GCEErrorReason = %q; want empty for a non-API error", got)
 	}
 }
+
+func TestFormatVMLocationHint(t *testing.T) {
+	testCases := []struct {
+		name         string
+		project      string
+		zone         string
+		instanceName string
+		want         string
+	}{
+		{
+			name:         "valid inputs",
+			project:      "my-project",
+			zone:         "us-central1-a",
+			instanceName: "gke-node-1",
+			want:         "project/my-project/zone/us-central1-a/instance/gke-node-1",
+		},
+		{
+			name:         "empty project",
+			project:      "",
+			zone:         "us-central1-a",
+			instanceName: "gke-node-1",
+			want:         "",
+		},
+		{
+			name:         "empty zone",
+			project:      "my-project",
+			zone:         "",
+			instanceName: "gke-node-1",
+			want:         "",
+		},
+		{
+			name:         "empty instance",
+			project:      "my-project",
+			zone:         "us-central1-a",
+			instanceName: "",
+			want:         "",
+		},
+		{
+			name:         "instance containing slash",
+			project:      "my-project",
+			zone:         "us-central1-a",
+			instanceName: "bad/node",
+			want:         "",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := FormatVMLocationHint(tc.project, tc.zone, tc.instanceName); got != tc.want {
+				t.Errorf("FormatVMLocationHint(%q, %q, %q) = %q, want %q", tc.project, tc.zone, tc.instanceName, got, tc.want)
+			}
+		})
+	}
+}
