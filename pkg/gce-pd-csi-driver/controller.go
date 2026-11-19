@@ -40,6 +40,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/flowcontrol"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
@@ -163,6 +164,10 @@ type GCEControllerServer struct {
 	// ClusterOwnershipID stores the cluster ownership identifier.
 	clusterOwnershipID string
 
+	// kubeClient is initialized when --enable-vm-location-hint is enabled,
+	// used to read the selected-node annotation from PVCs during CreateVolume.
+	kubeClient kubernetes.Interface
+
 	multiZoneVolumeHandleConfig MultiZoneVolumeHandleConfig
 
 	listVolumesConfig ListVolumesConfig
@@ -192,6 +197,7 @@ type GCEControllerServerArgs struct {
 	EnablePdConversion       bool
 	EnableDiskTypeConversion bool
 	ClusterOwnershipID       string
+	KubeClient               kubernetes.Interface
 }
 
 type MultiZoneVolumeHandleConfig struct {
@@ -285,6 +291,9 @@ const (
 	resourceProject    = "projects"
 
 	listDisksUsersField = googleapi.Field("items/users")
+
+	annSelectedNode  = "volume.kubernetes.io/selected-node"
+	pvcLookupTimeout = 5 * time.Second
 )
 
 var (
@@ -871,12 +880,13 @@ func (gceCS *GCEControllerServer) createSingleDisk(ctx context.Context, req *csi
 	// Create the disk
 	var disk *gce.CloudDisk
 	name := req.GetName()
+	locationHint := gceCS.getVMLocationHint(ctx, req, params, zones)
 
 	if params.IsRegional() {
 		if len(zones) != 2 {
 			return nil, status.Errorf(codes.Internal, "CreateVolume failed to get a 2 zones for creating regional disk, instead got: %v", zones)
 		}
-		disk, err = createRegionalDisk(ctx, gceCS.CloudProvider, name, zones, params, capacityRange, capBytes, snapshotID, volumeContentSourceVolumeID, multiWriter, accessMode)
+		disk, err = createRegionalDisk(ctx, gceCS.CloudProvider, name, zones, params, capacityRange, capBytes, snapshotID, volumeContentSourceVolumeID, multiWriter, accessMode, locationHint)
 		if err != nil {
 			return nil, common.LoggedError("CreateVolume failed to create regional disk "+name+": ", err)
 		}
@@ -884,7 +894,7 @@ func (gceCS *GCEControllerServer) createSingleDisk(ctx context.Context, req *csi
 		if len(zones) != 1 {
 			return nil, status.Errorf(codes.Internal, "CreateVolume failed to get a single zone for creating zonal disk, instead got: %v", zones)
 		}
-		disk, err = createSingleZoneDisk(ctx, gceCS.CloudProvider, name, zones, params, capacityRange, capBytes, snapshotID, volumeContentSourceVolumeID, multiWriter, accessMode)
+		disk, err = createSingleZoneDisk(ctx, gceCS.CloudProvider, name, zones, params, capacityRange, capBytes, snapshotID, volumeContentSourceVolumeID, multiWriter, accessMode, locationHint)
 		if err != nil {
 			return nil, common.LoggedError("CreateVolume failed to create single zonal disk "+name+": ", err)
 		}
@@ -4732,7 +4742,62 @@ func getResourceId(resourceLink string) (string, error) {
 	return strings.Join(elts[3:], "/"), nil
 }
 
-func createRegionalDisk(ctx context.Context, cloudProvider gce.GCECompute, name string, zones []string, params parameters.DiskParameters, capacityRange *csi.CapacityRange, capBytes int64, snapshotID string, volumeContentSourceVolumeID string, multiWriter bool, accessMode string) (*gce.CloudDisk, error) {
+// getVMLocationHint resolves a best-effort GCE VM location hint from the
+// PVC's selected-node annotation so GCE can co-locate the disk with the target
+// node VM. Any lookup failure fails open and returns "".
+func (gceCS *GCEControllerServer) getVMLocationHint(ctx context.Context, req *csi.CreateVolumeRequest, params parameters.DiskParameters, zones []string) string {
+	if gceCS.kubeClient == nil || params.MultiZoneProvisioning || len(params.StoragePools) > 0 {
+		return ""
+	}
+	vmZone := vmZoneForLocationHint(req, params, zones)
+	if vmZone == "" {
+		return ""
+	}
+	pvcName := req.GetParameters()[parameters.ParameterKeyPVCName]
+	pvcNamespace := req.GetParameters()[parameters.ParameterKeyPVCNamespace]
+	if pvcName == "" || pvcNamespace == "" {
+		return ""
+	}
+
+	lookupCtx, cancel := context.WithTimeout(ctx, pvcLookupTimeout)
+	defer cancel()
+
+	pvc, err := gceCS.kubeClient.CoreV1().PersistentVolumeClaims(pvcNamespace).Get(lookupCtx, pvcName, metav1.GetOptions{})
+	if err != nil {
+		klog.Warningf("Failed to get PVC %s/%s for VM location hint; continuing without hint: %v", pvcNamespace, pvcName, err)
+		return ""
+	}
+
+	selectedNode := pvc.Annotations[annSelectedNode]
+	if selectedNode == "" {
+		return ""
+	}
+
+	hint := gce.FormatVMLocationHint(gceCS.CloudProvider.GetDefaultProject(), vmZone, selectedNode)
+	if hint != "" {
+		klog.V(4).Infof("Resolved VM location hint %q for PVC %s/%s", hint, pvcNamespace, pvcName)
+	}
+	return hint
+}
+
+// vmZoneForLocationHint determines the zone of the selected node VM from the
+// preferred topology (which external-provisioner orders with the selected node
+// first in delayed binding), ensuring the zone is among the disk's target zones.
+func vmZoneForLocationHint(req *csi.CreateVolumeRequest, params parameters.DiskParameters, zones []string) string {
+	if preferred := req.GetAccessibilityRequirements().GetPreferred(); len(preferred) > 0 {
+		prefZone, err := getZoneFromSegment(preferred[0].GetSegments())
+		if err != nil || !slices.Contains(zones, prefZone) {
+			return ""
+		}
+		return prefZone
+	}
+	if !params.IsRegional() && len(zones) == 1 {
+		return zones[0]
+	}
+	return ""
+}
+
+func createRegionalDisk(ctx context.Context, cloudProvider gce.GCECompute, name string, zones []string, params parameters.DiskParameters, capacityRange *csi.CapacityRange, capBytes int64, snapshotID string, volumeContentSourceVolumeID string, multiWriter bool, accessMode string, locationHint string) (*gce.CloudDisk, error) {
 	project := cloudProvider.GetDefaultProject()
 	region, err := common.GetRegionFromZones(zones)
 	if err != nil {
@@ -4745,7 +4810,7 @@ func createRegionalDisk(ctx context.Context, cloudProvider gce.GCECompute, name 
 			fullyQualifiedReplicaZones, cloudProvider.GetReplicaZoneURI(project, replicaZone))
 	}
 
-	err = cloudProvider.InsertDisk(ctx, project, meta.RegionalKey(name, region), params, capBytes, capacityRange, fullyQualifiedReplicaZones, snapshotID, volumeContentSourceVolumeID, multiWriter, accessMode)
+	err = cloudProvider.InsertDisk(ctx, project, meta.RegionalKey(name, region), params, capBytes, capacityRange, fullyQualifiedReplicaZones, snapshotID, volumeContentSourceVolumeID, multiWriter, accessMode, locationHint)
 	if err != nil {
 		return nil, fmt.Errorf("failed to insert regional disk: %w", err)
 	}
@@ -4758,13 +4823,13 @@ func createRegionalDisk(ctx context.Context, cloudProvider gce.GCECompute, name 
 	return disk, nil
 }
 
-func createSingleZoneDisk(ctx context.Context, cloudProvider gce.GCECompute, name string, zones []string, params parameters.DiskParameters, capacityRange *csi.CapacityRange, capBytes int64, snapshotID string, volumeContentSourceVolumeID string, multiWriter bool, accessMode string) (*gce.CloudDisk, error) {
+func createSingleZoneDisk(ctx context.Context, cloudProvider gce.GCECompute, name string, zones []string, params parameters.DiskParameters, capacityRange *csi.CapacityRange, capBytes int64, snapshotID string, volumeContentSourceVolumeID string, multiWriter bool, accessMode string, locationHint string) (*gce.CloudDisk, error) {
 	project := cloudProvider.GetDefaultProject()
 	if len(zones) != 1 {
 		return nil, fmt.Errorf("got wrong number of zones for zonal create volume: %v", len(zones))
 	}
 	diskZone := zones[0]
-	err := cloudProvider.InsertDisk(ctx, project, meta.ZonalKey(name, diskZone), params, capBytes, capacityRange, nil, snapshotID, volumeContentSourceVolumeID, multiWriter, accessMode)
+	err := cloudProvider.InsertDisk(ctx, project, meta.ZonalKey(name, diskZone), params, capBytes, capacityRange, nil, snapshotID, volumeContentSourceVolumeID, multiWriter, accessMode, locationHint)
 	if err != nil {
 		return nil, fmt.Errorf("failed to insert zonal disk: %w", err)
 	}

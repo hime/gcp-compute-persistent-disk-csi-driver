@@ -2241,12 +2241,12 @@ func (cloud *FakeCloudProviderInsertDiskErr) AddDiskForErr(volKey *meta.Key, err
 	cloud.insertDiskErrors[volKey.String()] = err
 }
 
-func (cloud *FakeCloudProviderInsertDiskErr) InsertDisk(ctx context.Context, project string, volKey *meta.Key, params parameters.DiskParameters, capBytes int64, capacityRange *csi.CapacityRange, replicaZones []string, snapshotID string, volumeContentSourceVolumeID string, multiWriter bool, accessMode string) error {
+func (cloud *FakeCloudProviderInsertDiskErr) InsertDisk(ctx context.Context, project string, volKey *meta.Key, params parameters.DiskParameters, capBytes int64, capacityRange *csi.CapacityRange, replicaZones []string, snapshotID string, volumeContentSourceVolumeID string, multiWriter bool, accessMode string, locationHint string) error {
 	if err, ok := cloud.insertDiskErrors[volKey.String()]; ok {
 		return err
 	}
 
-	return cloud.FakeCloudProvider.InsertDisk(ctx, project, volKey, params, capBytes, capacityRange, replicaZones, snapshotID, volumeContentSourceVolumeID, multiWriter, accessMode)
+	return cloud.FakeCloudProvider.InsertDisk(ctx, project, volKey, params, capBytes, capacityRange, replicaZones, snapshotID, volumeContentSourceVolumeID, multiWriter, accessMode, locationHint)
 }
 
 func TestMultiZoneVolumeCreationErrHandling(t *testing.T) {
@@ -2841,7 +2841,7 @@ func TestControllerModifyVolumeSkipsUnchangedPerformanceValues(t *testing.T) {
 		DiskType:                      "hyperdisk-balanced",
 		ProvisionedIOPSOnCreate:       12000,
 		ProvisionedThroughputOnCreate: 250,
-	}, 200*1024*1024*1024, nil, nil, "", "", false, ""); err != nil {
+	}, 200*1024*1024*1024, nil, nil, "", "", false, "", ""); err != nil {
 		t.Fatalf("Failed to insert disk: %v", err)
 	}
 	cloud := &FakeCloudProviderUpdateDiskErr{FakeCloudProvider: baseCloud, updateDiskErrors: map[string]error{}}
@@ -3272,7 +3272,7 @@ func TestVolumeModifyOperation(t *testing.T) {
 
 		// Hyperdisk IOPS and throughput ceilings scale with disk size, so the
 		// disk is large enough to accept the values these cases request.
-		err = fcp.InsertDisk(context.Background(), project, volKey, *tc.params, 200*1024*1024*1024, nil, nil, "", "", false, "")
+		err = fcp.InsertDisk(context.Background(), project, volKey, *tc.params, 200*1024*1024*1024, nil, nil, "", "", false, "", "")
 		if err != nil {
 			t.Fatalf("Failed to insert disk: %v", err)
 		}

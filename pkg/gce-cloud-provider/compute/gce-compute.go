@@ -113,7 +113,7 @@ type GCECompute interface {
 	// Disk Methods
 	GetDisk(ctx context.Context, project string, volumeKey *meta.Key) (*CloudDisk, error)
 	RepairUnderspecifiedVolumeKey(ctx context.Context, project string, volumeKey *meta.Key, fallbackZone string) (string, *meta.Key, error)
-	InsertDisk(ctx context.Context, project string, volKey *meta.Key, params parameters.DiskParameters, capBytes int64, capacityRange *csi.CapacityRange, replicaZones []string, snapshotID string, volumeContentSourceVolumeID string, multiWriter bool, accessMode string) error
+	InsertDisk(ctx context.Context, project string, volKey *meta.Key, params parameters.DiskParameters, capBytes int64, capacityRange *csi.CapacityRange, replicaZones []string, snapshotID string, volumeContentSourceVolumeID string, multiWriter bool, accessMode string, locationHint string) error
 	DeleteDisk(ctx context.Context, project string, volumeKey *meta.Key) error
 	UpdateDisk(ctx context.Context, project string, volKey *meta.Key, existingDisk *CloudDisk, params parameters.ModifyVolumeParameters) error
 	AttachDisk(ctx context.Context, project string, volKey *meta.Key, readWrite, diskType, instanceZone, instanceName string, forceAttach bool) error
@@ -512,7 +512,19 @@ func ValidateDiskParameters(disk *CloudDisk, params parameters.DiskParameters) e
 	return nil
 }
 
-func (cloud *CloudProvider) InsertDisk(ctx context.Context, project string, volKey *meta.Key, params parameters.DiskParameters, capBytes int64, capacityRange *csi.CapacityRange, replicaZones []string, snapshotID string, volumeContentSourceVolumeID string, multiWriter bool, accessMode string) error {
+// FormatVMLocationHint returns the GCE VM location hint string for disks.insert
+// and regionDisks.insert, or "" if any component is empty or contains "/".
+func FormatVMLocationHint(project, zone, instanceName string) string {
+	if project == "" || zone == "" || instanceName == "" {
+		return ""
+	}
+	if strings.Contains(project, "/") || strings.Contains(zone, "/") || strings.Contains(instanceName, "/") {
+		return ""
+	}
+	return fmt.Sprintf(locationHintURITemplate, project, zone, instanceName)
+}
+
+func (cloud *CloudProvider) InsertDisk(ctx context.Context, project string, volKey *meta.Key, params parameters.DiskParameters, capBytes int64, capacityRange *csi.CapacityRange, replicaZones []string, snapshotID string, volumeContentSourceVolumeID string, multiWriter bool, accessMode string, locationHint string) error {
 	klog.V(5).Infof("Inserting disk %v", volKey)
 
 	description, err := encodeTags(params.Tags)
@@ -536,7 +548,7 @@ func (cloud *CloudProvider) InsertDisk(ctx context.Context, project string, volK
 		return fmt.Errorf("could not insert disk, key was neither zonal nor regional, instead got: %v", volKey.String())
 	}
 
-	diskToCreate, err := cloud.constructDiskToCreate(ctx, project, volKey, params, capBytes, replicaZones, snapshotID, volumeContentSourceVolumeID, description, multiWriter, accessMode)
+	diskToCreate, err := cloud.constructDiskToCreate(ctx, project, volKey, params, capBytes, replicaZones, snapshotID, volumeContentSourceVolumeID, description, multiWriter, accessMode, locationHint)
 	if err != nil {
 		return err
 	}
@@ -555,14 +567,16 @@ func (cloud *CloudProvider) constructDiskToCreate(
 	volumeContentSourceVolumeID string,
 	description string,
 	multiWriter bool,
-	accessMode string) (*computebeta.Disk, error) {
+	accessMode string,
+	locationHint string) (*computebeta.Disk, error) {
 
 	diskToCreate := &computebeta.Disk{
-		Name:        volKey.Name,
-		SizeGb:      common.BytesToGbRoundUp(capBytes),
-		Description: description,
-		Type:        cloud.GetDiskTypeURI(project, volKey, params.DiskType),
-		Labels:      params.Labels,
+		Name:         volKey.Name,
+		SizeGb:       common.BytesToGbRoundUp(capBytes),
+		Description:  description,
+		Type:         cloud.GetDiskTypeURI(project, volKey, params.DiskType),
+		Labels:       params.Labels,
+		LocationHint: locationHint,
 	}
 
 	if len(replicaZones) != 0 {
@@ -814,6 +828,7 @@ func convertV1DiskToBetaDisk(v1Disk *computev1.Disk) *computebeta.Disk {
 		SelfLink:          v1Disk.SelfLink,
 		Params:            params,
 		AccessMode:        v1Disk.AccessMode,
+		LocationHint:      v1Disk.LocationHint,
 	}
 
 	if v1Disk.ProvisionedIops > 0 {
@@ -877,6 +892,7 @@ func convertBetaDiskToV1Disk(betaDisk *computebeta.Disk) *computev1.Disk {
 		SelfLink:          betaDisk.SelfLink,
 		Params:            params,
 		AccessMode:        betaDisk.AccessMode,
+		LocationHint:      betaDisk.LocationHint,
 	}
 
 	if betaDisk.ProvisionedIops > 0 {

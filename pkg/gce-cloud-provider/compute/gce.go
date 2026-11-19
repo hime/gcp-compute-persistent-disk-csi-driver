@@ -59,6 +59,10 @@ const (
 
 	regionURITemplate = "projects/%s/regions/%s"
 
+	// GCE VM location hint format for disks.insert and regionDisks.insert.
+	// Note: singular "project", "zone", and "instance" are required by GCE.
+	locationHintURITemplate = "project/%s/zone/%s/instance/%s"
+
 	replicaZoneURITemplateSingleZone             = "projects/%s/zones/%s" // {gce.projectID}/zones/{disk.Zone}
 	EnvironmentStaging               Environment = "staging"
 	EnvironmentProduction            Environment = "production"

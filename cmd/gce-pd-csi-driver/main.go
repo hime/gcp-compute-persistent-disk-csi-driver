@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/strings/slices"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -124,6 +125,7 @@ var (
 	diskCacheSyncPeriod = flag.Duration("disk-cache-sync-period", 10*time.Minute, "Period for the disk cache to check the /dev/disk/by-id/ directory and evaluate the symlinks")
 
 	enableDiskSizeValidation = flag.Bool("enable-disk-size-validation", false, "If set to true, the driver will validate that the requested disk size is matches the physical disk size. This flag is disabled by default.")
+	enableVMLocationHint     = flag.Bool("enable-vm-location-hint", false, "If set to true, the CSI driver will pass the selected node VM in the locationHint field when creating disks. Disabled by default.")
 
 	runTaintController = flag.Bool("run-taint-controller", false, "Enables the Taint Cleanup Controller (watches CSINodes and removes startup taints once CSINode resource is created)")
 	runTaintWebhook    = flag.Bool("run-taint-webhook", false, "Enables the Mutating Admission Webhook (adds startup taints to Nodes to delay workloads until the CSINode resource is created)")
@@ -298,6 +300,18 @@ func handle() {
 			go cloudProvider.TenantInformer.Run(ctx.Done())
 		}
 
+		var kubeClient kubernetes.Interface
+		if *enableVMLocationHint {
+			kubeConfig, err := config.GetConfig()
+			if err != nil {
+				klog.Fatalf("Failed to get kubeconfig for VM location hint: %v", err)
+			}
+			kubeClient, err = kubernetes.NewForConfig(kubeConfig)
+			if err != nil {
+				klog.Fatalf("Failed to create Kubernetes client for VM location hint: %v", err)
+			}
+		}
+
 		initialBackoffDuration := time.Duration(*errorBackoffInitialDurationMs) * time.Millisecond
 		maxBackoffDuration := time.Duration(*errorBackoffMaxDurationMs) * time.Millisecond
 		// TODO(2042): Move more of the constructor args into this struct
@@ -309,6 +323,7 @@ func handle() {
 			EnablePdConversion:       *enablePdConversion,
 			EnableDiskTypeConversion: *enableDiskTypeConversion,
 			ClusterOwnershipID:       *clusterOwnershipID,
+			KubeClient:               kubeClient,
 		}
 
 		controllerServer = driver.NewControllerServer(gceDriver, cloudProvider, initialBackoffDuration, maxBackoffDuration, fallbackRequisiteZones, *enableStoragePoolsFlag, *enableDataCacheFlag, multiZoneVolumeHandleConfig, listVolumesConfig, provisionableDisksConfig, *enableHdHAFlag, args)

@@ -190,6 +190,7 @@ func NewControllerServer(gceDriver *GCEDriver, cloudProvider gce.GCECompute, err
 		EnablePdConversion:          args.EnablePdConversion,
 		EnableDiskTypeConversion:    args.EnableDiskTypeConversion,
 		clusterOwnershipID:          args.ClusterOwnershipID,
+		kubeClient:                  args.KubeClient,
 	}
 }
 

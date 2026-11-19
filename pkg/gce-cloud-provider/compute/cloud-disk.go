@@ -311,3 +311,14 @@ func (d *CloudDisk) GetProvisionedThroughput() int64 {
 		return 0
 	}
 }
+
+func (d *CloudDisk) GetLocationHint() string {
+	switch {
+	case d.disk != nil:
+		return d.disk.LocationHint
+	case d.betaDisk != nil:
+		return d.betaDisk.LocationHint
+	default:
+		return ""
+	}
+}

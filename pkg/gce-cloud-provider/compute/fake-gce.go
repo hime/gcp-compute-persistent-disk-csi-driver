@@ -206,7 +206,7 @@ func (cloud *FakeCloudProvider) GetDisk(ctx context.Context, project string, vol
 	return disk, nil
 }
 
-func (cloud *FakeCloudProvider) InsertDisk(ctx context.Context, project string, volKey *meta.Key, params parameters.DiskParameters, capBytes int64, capacityRange *csi.CapacityRange, replicaZones []string, snapshotID string, volumeContentSourceVolumeID string, multiWriter bool, accessMode string) error {
+func (cloud *FakeCloudProvider) InsertDisk(ctx context.Context, project string, volKey *meta.Key, params parameters.DiskParameters, capBytes int64, capacityRange *csi.CapacityRange, replicaZones []string, snapshotID string, volumeContentSourceVolumeID string, multiWriter bool, accessMode string, locationHint string) error {
 	if disk, ok := cloud.disks[volKey.String()]; ok {
 		err := ValidateExistingDisk(ctx, disk, params,
 			int64(capacityRange.GetRequiredBytes()),
@@ -230,6 +230,7 @@ func (cloud *FakeCloudProvider) InsertDisk(ctx context.Context, project string, 
 		AccessMode:                accessMode,
 		MultiWriter:               multiWriter,
 		EnableConfidentialCompute: params.EnableConfidentialCompute,
+		LocationHint:              locationHint,
 	}
 
 	if snapshotID != "" {
